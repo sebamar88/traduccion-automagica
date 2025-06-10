@@ -464,28 +464,26 @@ const runInteractiveMode = async () => {
             }
 
             if (operation === "verify") {
-                const output = verifyTranslations(
-                    new Array(
-                        ...SUPPORTED_LANGUAGES.map(
-                            (language) =>
-                                `${TRANSLATION_FOLDER}/${language}.json`
+                if (process.env.CI) {
+                    const output = verifyTranslations(
+                        SUPPORTED_LANGUAGES.map(
+                            (lng) => `${TRANSLATION_FOLDER}/${lng}.json`
                         )
-                    )
-                );
-                if (output.length) {
-                    console.error(
-                        `Las siguientes claves no están presentes en todos los idiomas: ${output.join(
-                            ", "
-                        )}`
                     );
-                    if (process.env.CI) {
-                        // if the process is executed during CI, throw an error.
+                    if (output.length) {
+                        console.error(
+                            `❌ Las siguientes claves no están presentes en todos los idiomas: ${output.join(
+                                ", "
+                            )}`
+                        );
                         process.exit(1);
+                    } else {
+                        console.log(
+                            "✅ ¡Todos los archivos de traducciones están alineados!"
+                        );
                     }
                 } else {
-                    console.log(
-                        "¡Todos los archivos de traducciones están alineados!"
-                    );
+                    await runVerifyWithPrompt();
                 }
             }
         })
@@ -602,24 +600,26 @@ const processCommandLineArgs = async () => {
     }
 
     if (operation === "verify") {
-        const output = verifyTranslations(
-            new Array(
-                ...SUPPORTED_LANGUAGES.map(
-                    (language) => `${TRANSLATION_FOLDER}/${language}.json`
+        if (process.env.CI) {
+            const output = verifyTranslations(
+                SUPPORTED_LANGUAGES.map(
+                    (lng) => `${TRANSLATION_FOLDER}/${lng}.json`
                 )
-            )
-        );
-        if (output.length) {
-            console.error(
-                `Las siguientes claves no están presentes en todos los idiomas: ${output.join(
-                    ", "
-                )}`
             );
-            if (process.env.CI) {
+            if (output.length) {
+                console.error(
+                    `❌ Las siguientes claves no están presentes en todos los idiomas: ${output.join(
+                        ", "
+                    )}`
+                );
                 process.exit(1);
+            } else {
+                console.log(
+                    "✅ ¡Todos los archivos de traducciones están alineados!"
+                );
             }
         } else {
-            console.log("¡Todos los archivos de traducciones están alineados!");
+            await runVerifyWithPrompt();
         }
     }
 };
@@ -630,3 +630,104 @@ if (operationFromArgs) {
 } else {
     runInteractiveMode();
 }
+
+const promptSyncOption = async () => {
+    const { syncMode } = await inquirer.prompt([
+        {
+            type: "list",
+            name: "syncMode",
+            message: "Desincronización detectada. ¿Qué querés hacer?",
+            choices: [
+                { name: "Sincronizar automáticamente", value: "auto" },
+                { name: "Sincronizar manualmente", value: "manual" },
+                { name: "No hacer nada", value: "none" },
+            ],
+        },
+    ]);
+    return syncMode;
+};
+
+const syncMissingKeys = async (differences, syncMode) => {
+    const spanishFile = `${TRANSLATION_FOLDER}/${LANGUAGES.ES}.json`;
+    const spanishData = require(spanishFile);
+
+    for (const { key, missingIn } of differences) {
+        const baseText = spanishData[key] || key;
+
+        for (const lng of missingIn) {
+            const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
+            let value;
+
+            if (syncMode === "auto") {
+                try {
+                    value = await translate(baseText, { from: "es", to: lng });
+                } catch (err) {
+                    console.error(
+                        "❌ Error al traducir automáticamente:",
+                        err.message
+                    );
+                    continue;
+                }
+            } else if (syncMode === "manual") {
+                const { userInput } = await inquirer.prompt([
+                    {
+                        type: "input",
+                        name: "userInput",
+                        message: `Traducción para "${key}" en ${lng}`,
+                    },
+                ]);
+                value = userInput;
+            }
+
+            if (value) {
+                const file = require(fileName);
+                file[key] = value;
+                const sorted = Object.keys(file)
+                    .sort()
+                    .reduce((a, k) => ({ ...a, [k]: file[k] }), {});
+                require("fs").writeFileSync(
+                    fileName,
+                    JSON.stringify(sorted, null, 2)
+                );
+                console.log(`✅ Clave "${key}" sincronizada en ${lng}`);
+            }
+        }
+    }
+};
+
+const runVerifyWithPrompt = async () => {
+    const fs = require("fs");
+    const files = SUPPORTED_LANGUAGES.map((lng) => ({
+        lng,
+        path: `${TRANSLATION_FOLDER}/${lng}.json`,
+        data: require(`${TRANSLATION_FOLDER}/${lng}.json`),
+    }));
+
+    const allKeys = Array.from(
+        new Set(files.flatMap((f) => Object.keys(f.data)))
+    );
+
+    const differences = [];
+
+    for (const key of allKeys) {
+        const missingIn = files
+            .filter((f) => !(key in f.data))
+            .map((f) => f.lng);
+        if (missingIn.length) differences.push({ key, missingIn });
+    }
+
+    if (differences.length === 0) {
+        console.log("✅ Todo está sincronizado.");
+        return;
+    }
+
+    console.log("🔍 Claves desincronizadas encontradas:");
+    differences.forEach(({ key, missingIn }) =>
+        console.log(`- "${key}" falta en: ${missingIn.join(", ")}`)
+    );
+
+    const syncMode = await promptSyncOption();
+    if (syncMode !== "none") {
+        await syncMissingKeys(differences, syncMode);
+    }
+};
