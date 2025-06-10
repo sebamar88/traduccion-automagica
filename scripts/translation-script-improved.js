@@ -100,8 +100,27 @@ const getMessageForInputKey = (lng, key) => {
     return output.join(" ");
 };
 
+const detectLanguage = async (text) => {
+    try {
+        const fetch = require("node-fetch");
+        const response = await fetch(
+            `${LIBRE_TRANSLATE_CONFIG.url.replace(/\/translate$/, "")}/detect`,
+            {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ q: text }),
+            }
+        );
+        const result = await response.json();
+        return result?.[0]?.language || "es";
+    } catch (error) {
+        console.error("❌ Error al detectar el idioma:", error.message);
+        return "es"; // fallback
+    }
+};
+
 // Función para traducir automáticamente usando IA
-const autoTranslateFromSpanish = async (spanishText) => {
+const autoTranslateFromDetectedLang = async (inputText) => {
     if (!LIBRE_TRANSLATE_CONFIG.enabled) {
         console.log(
             "⚠️  Traducción automática no disponible. LibreTranslate no está configurado."
@@ -110,30 +129,25 @@ const autoTranslateFromSpanish = async (spanishText) => {
     }
 
     try {
-        console.log("🤖 Traduciendo automáticamente...");
+        console.log("🌍 Detectando idioma...");
+        const detectedLang = await detectLanguage(inputText);
+        console.log(`🕵️  Idioma detectado: ${detectedLang}`);
 
         const translations = {};
 
-        // Traducir a inglés
-        console.log("   📝 Traduciendo a inglés...");
-        translations.en = await translate(spanishText, {
-            from: "es",
-            to: "en",
-        });
-
-        // Traducir a portugués
-        console.log("   📝 Traduciendo a portugués...");
-        translations.pt = await translate(spanishText, {
-            from: "es",
-            to: "pt",
-        });
-
-        // Traducir a holandés
-        console.log("   📝 Traduciendo a holandés...");
-        translations.nl = await translate(spanishText, {
-            from: "es",
-            to: "nl",
-        });
+        for (const targetLang of SUPPORTED_LANGUAGES) {
+            if (targetLang === detectedLang) {
+                translations[targetLang] = inputText;
+            } else {
+                console.log(
+                    `   📝 Traduciendo a ${LANGUAGE_DESCRIPTION[targetLang]}...`
+                );
+                translations[targetLang] = await translate(inputText, {
+                    from: detectedLang,
+                    to: targetLang,
+                });
+            }
+        }
 
         console.log("✅ Traducción automática completada!");
         return translations;
@@ -168,18 +182,17 @@ const checkLibreTranslateAvailable = async () => {
 };
 
 // Función para confirmar/editar traducciones automáticas
-const confirmTranslations = async (key, spanishText, autoTranslations) => {
+const confirmTranslations = async (key, baseText, autoTranslations) => {
     const prompt = inquirer.createPromptModule();
 
     if (autoTranslations) {
         console.log("\n📋 Traducciones generadas automáticamente por IA:");
-        console.log(`🇪🇸 ES: ${spanishText}`);
-        console.log(`🇺🇸 EN: ${autoTranslations.en}`);
-        console.log(`🇧🇷 PT: ${autoTranslations.pt}`);
-        console.log(`🇳🇱 NL: ${autoTranslations.nl}`);
+        SUPPORTED_LANGUAGES.forEach((lng) => {
+            console.log(`${lng.toUpperCase()}: ${autoTranslations[lng]}`);
+        });
     } else {
         console.log("\n❌ La traducción automática no funcionó. Modo manual:");
-        console.log(`🇪🇸 ES: ${spanishText}`);
+        console.log(`🌐 Texto base: ${baseText}`);
     }
 
     const answers = await prompt([
@@ -217,16 +230,11 @@ const confirmTranslations = async (key, spanishText, autoTranslations) => {
     ]);
 
     if (answers.useAutoTranslations && autoTranslations) {
-        return {
-            es: spanishText,
-            en: autoTranslations.en,
-            pt: autoTranslations.pt,
-            nl: autoTranslations.nl,
-        };
+        return autoTranslations;
     } else {
         return {
-            es: spanishText,
             en: answers.en,
+            es: answers.es,
             pt: answers.pt,
             nl: answers.nl,
         };
@@ -316,7 +324,7 @@ const runInteractiveMode = async () => {
             message: "¿Cómo quieres crear las traducciones?",
             choices: [
                 {
-                    name: "🤖 Automático con IA (solo español → IA traduce el resto)",
+                    name: "🤖 Automático con IA (detecta idioma y traduce el resto)",
                     value: "auto",
                     short: "Automático",
                 },
@@ -333,8 +341,9 @@ const runInteractiveMode = async () => {
         // Para modo automático - Solo pedir español
         {
             type: "input",
-            name: "es",
-            message: "🇪🇸 Texto en español:",
+            name: "baseText",
+            message:
+                "🌐 Ingresá el texto base (se detectará el idioma automáticamente):",
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation) &&
                 answers.translationMode === "auto",
@@ -378,6 +387,12 @@ const runInteractiveMode = async () => {
 
             if (["create or update", "read", "remove"].includes(operation)) {
                 const key = answers.key || paramsFromArgs[0];
+                if (!key) {
+                    console.error(
+                        "❌ Debes ingresar una clave de traducción válida."
+                    );
+                    return;
+                }
 
                 if (operation === "create or update") {
                     const translationMode =
@@ -386,11 +401,11 @@ const runInteractiveMode = async () => {
 
                     if (translationMode === "auto") {
                         // MODO AUTOMÁTICO con IA
-                        const spanishText = answers.es || paramsFromArgs[1];
+                        const baseText = answers.baseText || paramsFromArgs[1];
 
-                        if (!spanishText) {
+                        if (!baseText) {
                             console.error(
-                                "❌ Debes proporcionar el texto en español"
+                                "❌ Debes proporcionar un texto base para traducir."
                             );
                             return;
                         }
@@ -400,14 +415,13 @@ const runInteractiveMode = async () => {
                         );
 
                         // Intentar traducción automática
-                        const autoTranslations = await autoTranslateFromSpanish(
-                            spanishText
-                        );
+                        const autoTranslations =
+                            await autoTranslateFromDetectedLang(baseText);
 
                         // Confirmar/editar traducciones
                         const finalTranslations = await confirmTranslations(
                             key,
-                            spanishText,
+                            baseText,
                             autoTranslations
                         );
 
@@ -513,10 +527,12 @@ const processCommandLineArgs = async () => {
 
     if (["create or update", "read", "remove"].includes(operation)) {
         if (operation === "create or update") {
-            const spanishText = paramsFromArgs[1];
+            const baseText = paramsFromArgs[1];
 
-            if (!spanishText) {
-                console.error("❌ Debes proporcionar el texto en español");
+            if (!baseText) {
+                console.error(
+                    "❌ Debes proporcionar un texto base para traducir"
+                );
                 return;
             }
 
@@ -529,30 +545,22 @@ const processCommandLineArgs = async () => {
                 );
 
                 // Intentar traducción automática
-                const autoTranslations = await autoTranslateFromSpanish(
-                    spanishText
+                const autoTranslations = await autoTranslateFromDetectedLang(
+                    baseText
                 );
 
                 if (autoTranslations) {
-                    // En línea de comandos, usar automáticamente las traducciones sin confirmar
                     console.log("\n📋 Traducciones generadas automáticamente:");
-                    console.log(`🇪🇸 ES: ${spanishText}`);
-                    console.log(`🇺🇸 EN: ${autoTranslations.en}`);
-                    console.log(`🇧🇷 PT: ${autoTranslations.pt}`);
-                    console.log(`🇳🇱 NL: ${autoTranslations.nl}`);
-
-                    const finalTranslations = {
-                        es: spanishText,
-                        en: autoTranslations.en,
-                        pt: autoTranslations.pt,
-                        nl: autoTranslations.nl,
-                    };
+                    SUPPORTED_LANGUAGES.forEach((lng) => {
+                        console.log(
+                            `${lng.toUpperCase()}: ${autoTranslations[lng]}`
+                        );
+                    });
 
                     // Guardar todas las traducciones
                     SUPPORTED_LANGUAGES.forEach((lng) => {
                         const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
-                        const newLabel = finalTranslations[lng];
-                        updateKeyInJSON(fileName, key, newLabel);
+                        updateKeyInJSON(fileName, key, autoTranslations[lng]);
                     });
 
                     console.log(
