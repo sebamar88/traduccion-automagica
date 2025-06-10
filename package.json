@@ -1,0 +1,24 @@
+{
+  "name": "translation-script-improved",
+  "version": "1.0.0",
+  "description": "Script mejorado de traducciones con IA de código abierto",
+  "main": "translation-script-improved.js",
+  "scripts": {
+    "translate": "node translation-script-improved.js",
+    "setup-libre": "docker run -ti --rm -p 5000:5000 libretranslate/libretranslate"
+  },
+  "dependencies": {
+    "inquirer": "^8.2.5",
+    "translate": "^1.4.1"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "translation",
+    "i18n",
+    "libre-translate",
+    "nodejs",
+    "automation"
+  ],
+  "author": "",
+  "license": "MIT"
+}
