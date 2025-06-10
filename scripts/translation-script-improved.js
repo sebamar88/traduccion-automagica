@@ -338,7 +338,7 @@ const runInteractiveMode = async () => {
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation),
         },
-        // Para modo automático - Solo pedir español
+        // Para modo automático - Detectar idioma y pedir texto base
         {
             type: "input",
             name: "baseText",

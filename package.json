@@ -1,28 +1,24 @@
 {
-  "name": "translation-script-improved",
-  "version": "1.0.0",
-  "description": "Script mejorado de traducciones con IA de código abierto",
-  "main": "translation-script-improved.js",
-  "scripts": {
-    "translate": "node translation-script-improved.js",
-    "setup-libre": "docker run -ti --rm -p 5000:5000 libretranslate/libretranslate",
-    "example-setup": "node example-modes.js setup",
-    "example-run": "node example-modes.js run",
-    "test": "node setup-and-test.js"
-  },
-  "dependencies": {
-    "inquirer": "^8.2.5",
-    "translate": "^1.4.1",
-    "node-fetch": "^2.7.0"
-  },
-  "devDependencies": {},
-  "keywords": [
-    "translation",
-    "i18n",
-    "libre-translate",
-    "nodejs",
-    "automation"
-  ],
-  "author": "",
-  "license": "MIT"
+    "name": "translation-script-improved",
+    "version": "1.0.0",
+    "description": "Script mejorado de traducciones con IA de código abierto",
+    "main": "translation-script-improved.js",
+    "scripts": {
+        "translate": "node ./scripts/translation-script-improved.js"
+    },
+    "dependencies": {
+        "inquirer": "^8.2.5",
+        "translate": "^1.4.1",
+        "node-fetch": "^2.7.0"
+    },
+    "devDependencies": {},
+    "keywords": [
+        "translation",
+        "i18n",
+        "libre-translate",
+        "nodejs",
+        "automation"
+    ],
+    "author": "",
+    "license": "MIT"
 }
