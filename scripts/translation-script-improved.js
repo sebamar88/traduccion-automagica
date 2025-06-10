@@ -1,3 +1,4 @@
+const fs = require("fs");
 const inquirer = require("inquirer");
 const translate = require("translate");
 
@@ -17,6 +18,25 @@ const LANGUAGE_DESCRIPTION = {
     [LANGUAGES.ES]: "Spanish",
     [LANGUAGES.PT]: "Portuguese",
     [LANGUAGES.NL]: "Dutch",
+};
+
+const readJSON = (filePath) => {
+    try {
+        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch (error) {
+        console.error(`❌ Error al leer el archivo JSON: ${filePath}`);
+        return {};
+    }
+};
+
+const writeJSON = (filePath, data) => {
+    const sortedJson = Object.keys(data)
+        .sort()
+        .reduce((acc, key) => {
+            acc[key] = data[key];
+            return acc;
+        }, {});
+    fs.writeFileSync(filePath, JSON.stringify(sortedJson, null, 2));
 };
 
 // Configuración de LibreTranslate
@@ -41,14 +61,7 @@ const verifyTranslations = (files) => {
         return [];
     }
     // Parse the JSON files and extract their keys
-    const parsedFiles = files.map((file) => {
-        try {
-            return require(file);
-        } catch (error) {
-            console.error(`Error parsing JSON file: ${error}`);
-            return null;
-        }
-    });
+    const parsedFiles = files.map(readJSON);
     // Track keys for each file
     const fileKeys = parsedFiles.map((file) => new Set(Object.keys(file)));
     // Get all unique keys across files
@@ -61,24 +74,19 @@ const verifyTranslations = (files) => {
 };
 
 const deleteKeyInJSON = (fileName, key) => {
-    const fs = require("fs");
-    const file = require(fileName);
+    const file = readJSON(fileName);
     delete file[key];
-    fs.writeFileSync(fileName, JSON.stringify(file, null, 2));
+    writeJSON(fileName, file);
 };
 
 const updateKeyInJSON = (fileName, key, value) => {
-    const fs = require("fs");
-    const file = require(fileName);
+    const file = readJSON(fileName);
     file[key] = value;
-    const sortedJson = Object.keys(file)
-        .sort()
-        .reduce((acc, key) => ({ ...acc, [key]: file[key] }), {});
-    fs.writeFileSync(fileName, JSON.stringify(sortedJson, null, 2));
+    writeJSON(fileName, file);
 };
 
 const readKeyInJSON = (fileName, key) => {
-    const file = require(fileName);
+    const file = readJSON(fileName);
     return file[key];
 };
 
@@ -648,11 +656,26 @@ const promptSyncOption = async () => {
 };
 
 const syncMissingKeys = async (differences, syncMode) => {
-    const spanishFile = `${TRANSLATION_FOLDER}/${LANGUAGES.ES}.json`;
-    const spanishData = require(spanishFile);
+    const getSourceText = (key) => {
+        for (const lng of SUPPORTED_LANGUAGES) {
+            const filePath = `${TRANSLATION_FOLDER}/${lng}.json`;
+            const data = readJSON(filePath);
+            if (data[key]) return { text: data[key], sourceLang: lng };
+        }
+        return null;
+    };
 
     for (const { key, missingIn } of differences) {
-        const baseText = spanishData[key] || key;
+        const source = getSourceText(key);
+
+        if (!source) {
+            console.warn(
+                `❌ No se encontró texto base para la clave "${key}" en ningún idioma.`
+            );
+            continue;
+        }
+
+        const { text: baseText, sourceLang } = source;
 
         for (const lng of missingIn) {
             const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
@@ -660,10 +683,13 @@ const syncMissingKeys = async (differences, syncMode) => {
 
             if (syncMode === "auto") {
                 try {
-                    value = await translate(baseText, { from: "es", to: lng });
+                    value = await translate(baseText, {
+                        from: sourceLang,
+                        to: lng,
+                    });
                 } catch (err) {
                     console.error(
-                        "❌ Error al traducir automáticamente:",
+                        `❌ Error al traducir automáticamente "${key}" desde ${sourceLang} a ${lng}:`,
                         err.message
                     );
                     continue;
@@ -673,22 +699,16 @@ const syncMissingKeys = async (differences, syncMode) => {
                     {
                         type: "input",
                         name: "userInput",
-                        message: `Traducción para "${key}" en ${lng}`,
+                        message: `Traducción para "${key}" en ${lng} (desde ${sourceLang.toUpperCase()}: "${baseText}")`,
                     },
                 ]);
                 value = userInput;
             }
 
             if (value) {
-                const file = require(fileName);
+                const file = readJSON(fileName);
                 file[key] = value;
-                const sorted = Object.keys(file)
-                    .sort()
-                    .reduce((a, k) => ({ ...a, [k]: file[k] }), {});
-                require("fs").writeFileSync(
-                    fileName,
-                    JSON.stringify(sorted, null, 2)
-                );
+                writeJSON(fileName, file);
                 console.log(`✅ Clave "${key}" sincronizada en ${lng}`);
             }
         }
