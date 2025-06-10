@@ -158,29 +158,6 @@ const autoTranslateFromDetectedLang = async (inputText) => {
     }
 };
 
-// Función para verificar si LibreTranslate está disponible (sin mostrar errores)
-const checkLibreTranslateAvailable = async () => {
-    if (!LIBRE_TRANSLATE_CONFIG.enabled) return false;
-
-    try {
-        // Intentar cargar node-fetch
-        let fetch;
-        try {
-            fetch = require("node-fetch");
-        } catch (error) {
-            // node-fetch no está disponible
-            return false;
-        }
-
-        const response = await fetch("http://localhost:5000/health", {
-            timeout: 3000,
-        });
-        return response.ok;
-    } catch (error) {
-        return false;
-    }
-};
-
 // Función para confirmar/editar traducciones automáticas
 const confirmTranslations = async (key, baseText, autoTranslations) => {
     const prompt = inquirer.createPromptModule();
@@ -276,19 +253,11 @@ if (operationFromArgs) {
     }
 }
 
-// Función para determinar el modo predeterminado
-const getDefaultTranslationMode = async () => {
-    if (!LIBRE_TRANSLATE_CONFIG.enabled) return "manual";
-
-    const isAvailable = await checkLibreTranslateAvailable();
-    return isAvailable ? "auto" : "manual";
-};
-
 const prompt = inquirer.createPromptModule();
 
 // Obtener modo predeterminado antes de mostrar prompts
 const runInteractiveMode = async () => {
-    const defaultMode = await getDefaultTranslationMode();
+    const defaultMode = "auto";
 
     if (!LIBRE_TRANSLATE_CONFIG.enabled || defaultMode === "manual") {
         console.log("ℹ️  LibreTranslate no detectado. Modo manual disponible.");
