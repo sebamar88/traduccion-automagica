@@ -2,13 +2,13 @@ const translate = require("translate");
 const inquirer = require("inquirer");
 
 // Configuración de LibreTranslate
-const LIBRE_TRANSLATE_URL = "http://localhost:5000/translate";
+const LIBRE_TRANSLATE_URL = "https://lt.vern.cc/translate";
 
 // Función para verificar si LibreTranslate está ejecutándose
 const checkLibreTranslateHealth = async () => {
     try {
         const fetch = require("node-fetch");
-        const response = await fetch("http://localhost:5000/health");
+        const response = await fetch("https://lt.vern.cc/");
         return response.ok;
     } catch (error) {
         return false;
