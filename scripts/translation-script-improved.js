@@ -1,8 +1,9 @@
 const fs = require("fs");
 const inquirer = require("inquirer");
 const translate = require("translate");
+const path = require("path");
 
-const TRANSLATION_FOLDER = `${__dirname}/../src/translations`;
+const TRANSLATION_FOLDER = path.join(__dirname, "..", "src", "translations");
 
 const LANGUAGES = { EN: "en", ES: "es", PT: "pt", NL: "nl" };
 
@@ -30,13 +31,20 @@ const readJSON = (filePath) => {
 };
 
 const writeJSON = (filePath, data) => {
-    const sortedJson = Object.keys(data)
-        .sort()
-        .reduce((acc, key) => {
-            acc[key] = data[key];
-            return acc;
-        }, {});
-    fs.writeFileSync(filePath, JSON.stringify(sortedJson, null, 2));
+    try {
+        const sortedJson = Object.keys(data)
+            .sort()
+            .reduce((acc, key) => {
+                acc[key] = data[key];
+                return acc;
+            }, {});
+        fs.writeFileSync(filePath, JSON.stringify(sortedJson, null, 2));
+    } catch (error) {
+        console.error(
+            `❌ Error al escribir el archivo JSON: ${filePath}`,
+            error.message
+        );
+    }
 };
 
 // Configuración de LibreTranslate
@@ -100,7 +108,29 @@ const getMessageForInputKey = (lng, key) => {
     return output.join(" ");
 };
 
+// Función para limpiar texto de espacios adicionales
+const cleanExtraSpaces = (text) => {
+    return text.replace(/\s+/g, " ").trim();
+};
+
+// Función para validar que las entradas no estén vacías
+const validateNonEmpty = (input) => {
+    if (input.trim() === "") {
+        return "Este campo no puede estar vacío.";
+    }
+    return true;
+};
+
 const detectLanguage = async (text) => {
+    // Limpiar el texto de espacios adicionales
+    const cleanedText = cleanExtraSpaces(text);
+
+    // Validar que el texto no esté vacío
+    if (!cleanedText) {
+        console.warn("El texto está vacío. No se puede detectar el idioma.");
+        return "es"; // Idioma por defecto
+    }
+
     try {
         const fetch = require("node-fetch");
         const response = await fetch(
@@ -108,7 +138,7 @@ const detectLanguage = async (text) => {
             {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ q: text }),
+                body: JSON.stringify({ q: cleanedText }),
             }
         );
         const result = await response.json();
@@ -187,6 +217,22 @@ const confirmTranslations = async (key, baseText, autoTranslations) => {
             default: autoTranslations?.en || "",
             when: (answers) =>
                 !answers.useAutoTranslations || autoTranslations === null,
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
+        },
+        {
+            type: "input",
+            name: "es",
+            message: ({ key }) => getMessageForInputKey(LANGUAGES.ES, key),
+            default: autoTranslations?.es || "",
+            when: (answers) =>
+                !answers.useAutoTranslations || autoTranslations === null,
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
         {
             type: "input",
@@ -195,6 +241,10 @@ const confirmTranslations = async (key, baseText, autoTranslations) => {
             default: autoTranslations?.pt || "",
             when: (answers) =>
                 !answers.useAutoTranslations || autoTranslations === null,
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
         {
             type: "input",
@@ -203,6 +253,10 @@ const confirmTranslations = async (key, baseText, autoTranslations) => {
             default: autoTranslations?.nl || "",
             when: (answers) =>
                 !answers.useAutoTranslations || autoTranslations === null,
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
     ]);
 
@@ -325,6 +379,10 @@ const runInteractiveMode = async () => {
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation) &&
                 answers.translationMode === "manual",
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
         {
             type: "input",
@@ -333,6 +391,10 @@ const runInteractiveMode = async () => {
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation) &&
                 answers.translationMode === "manual",
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
         {
             type: "input",
@@ -341,6 +403,10 @@ const runInteractiveMode = async () => {
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation) &&
                 answers.translationMode === "manual",
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
         {
             type: "input",
@@ -349,6 +415,10 @@ const runInteractiveMode = async () => {
             when: (answers) =>
                 ["create or update", "create"].includes(answers.operation) &&
                 answers.translationMode === "manual",
+            validate: (input) =>
+                validateNonEmpty(input) === true
+                    ? true
+                    : validateNonEmpty(input),
         },
     ])
         .then(async (answers) => {
@@ -394,12 +464,8 @@ const runInteractiveMode = async () => {
                             autoTranslations
                         );
 
-                        // Guardar todas las traducciones
-                        SUPPORTED_LANGUAGES.forEach((lng) => {
-                            const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
-                            const newLabel = finalTranslations[lng];
-                            updateKeyInJSON(fileName, key, newLabel);
-                        });
+                        // Guardar todas las traducciones usando la función helper
+                        saveTranslations(key, finalTranslations);
 
                         console.log(
                             `✅ Traducciones automáticas guardadas exitosamente para la clave "${key}"`
@@ -410,6 +476,7 @@ const runInteractiveMode = async () => {
                             `✋ Modo manual seleccionado para "${key}"`
                         );
 
+                        const manualTranslations = {};
                         SUPPORTED_LANGUAGES.forEach((lng) => {
                             const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
                             const existingLabel = readKeyInJSON(fileName, key);
@@ -423,9 +490,11 @@ const runInteractiveMode = async () => {
                                 existingLabel;
 
                             if (newLabel) {
-                                updateKeyInJSON(fileName, key, newLabel);
+                                manualTranslations[lng] = newLabel;
                             }
                         });
+
+                        saveTranslations(key, manualTranslations);
 
                         console.log(
                             `✅ Traducciones manuales guardadas exitosamente para la clave "${key}"`
@@ -526,11 +595,8 @@ const processCommandLineArgs = async () => {
                         );
                     });
 
-                    // Guardar todas las traducciones
-                    SUPPORTED_LANGUAGES.forEach((lng) => {
-                        const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
-                        updateKeyInJSON(fileName, key, autoTranslations[lng]);
-                    });
+                    // Guardar todas las traducciones usando la función helper
+                    saveTranslations(key, autoTranslations);
 
                     console.log(
                         `✅ Traducciones automáticas guardadas exitosamente para la clave "${key}"`
@@ -544,6 +610,7 @@ const processCommandLineArgs = async () => {
                 // Modo manual con línea de comandos
                 console.log(`✋ Modo manual (línea de comandos) para "${key}"`);
 
+                const manualTranslations = {};
                 SUPPORTED_LANGUAGES.forEach((lng) => {
                     const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
                     const existingLabel = readKeyInJSON(fileName, key);
@@ -553,9 +620,11 @@ const processCommandLineArgs = async () => {
                         existingLabel;
 
                     if (newLabel) {
-                        updateKeyInJSON(fileName, key, newLabel);
+                        manualTranslations[lng] = newLabel;
                     }
                 });
+
+                saveTranslations(key, manualTranslations);
 
                 console.log(
                     `✅ Traducciones manuales guardadas exitosamente para la clave "${key}"`
@@ -693,11 +762,10 @@ const syncMissingKeys = async (differences, syncMode) => {
 };
 
 const runVerifyWithPrompt = async () => {
-    const fs = require("fs");
     const files = SUPPORTED_LANGUAGES.map((lng) => ({
         lng,
         path: `${TRANSLATION_FOLDER}/${lng}.json`,
-        data: require(`${TRANSLATION_FOLDER}/${lng}.json`),
+        data: readJSON(`${TRANSLATION_FOLDER}/${lng}.json`),
     }));
 
     const allKeys = Array.from(
@@ -728,3 +796,11 @@ const runVerifyWithPrompt = async () => {
         await syncMissingKeys(differences, syncMode);
     }
 };
+
+// NUEVA FUNCIÓN: Guardar traducciones en todos los idiomas
+function saveTranslations(key, translations) {
+    SUPPORTED_LANGUAGES.forEach((lng) => {
+        const fileName = `${TRANSLATION_FOLDER}/${lng}.json`;
+        updateKeyInJSON(fileName, key, translations[lng]);
+    });
+}
